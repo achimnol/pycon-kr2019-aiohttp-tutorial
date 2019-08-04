@@ -1,0 +1,80 @@
+<!doctype html>
+<html>
+<head>
+  <title>My Chat</title>
+  <style type="text/css">
+  #chat {
+    width: 100%;
+    height: 100% - 50px;
+    padding: 10px;
+    overflow: scroll;
+    background: #ddd;
+  }
+  #chat .user {
+    display: inline-block;
+    width: 20%;
+    padding: 2px;
+    margin: 0;
+    font-weight: bold;
+  }
+  #chat .text {
+    display: inline-block;
+    width: 80%;
+    padding: 2px;
+    margin: 0;
+  }
+  #chatInput {
+    position: fixed;
+    bottom: 0;
+    width: 100%;
+    height: 50px;
+    padding: 5px;
+    background: #ccc;
+  }
+  </style>
+</head>
+<body>
+  <p>User: {{ user_id }}</p>
+  <div id="chat"></div>
+  <div id="chatInput">
+    <button id="send">Send</button>
+  </div>
+
+<script type="text/javascript">
+
+async function sendChat(msg) {
+  let rqstData = {
+    'text': msg,
+  };
+  console.log('sendChat', rqstData);
+  let resp = await fetch('/chat', {method: 'POST', body: JSON.stringify(rqstData)});
+  let result = await resp.json();
+  return result;
+}
+
+document.addEventListener('DOMContentLoaded', (e) => {
+  let send_button = document.getElementById('send');
+  send_button.addEventListener('click', (e) => {
+    sendChat('test').then((result) => {
+      console.log('sendChat success:', result);
+    }).catch((err) => {
+      console.log('sendChat error:', err);
+    });
+  });
+
+  let evt_source = new EventSource("/chat");
+  evt_source.onmessage = (e) => {
+    console.log('chat receieved', e);
+    let msg_elem = document.createElement('div');
+    msg_elem.classList.add('message');
+    msg_elem.insertAdjacentHTML('beforeend', '<span class="user"></span>');
+    msg_elem.insertAdjacentHTML('beforeend', '<span class="text"></span>');
+    msg_elem.querySelector('.user').innerText = JSON.parse(e.data).user;
+    msg_elem.querySelector('.text').innerText = JSON.parse(e.data).text;
+    document.getElementById('chat').appendChild(msg_elem);
+  };
+});
+
+</script>
+</body>
+</html>
