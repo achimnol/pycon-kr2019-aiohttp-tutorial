@@ -106,14 +106,13 @@ document.addEventListener('DOMContentLoaded', (e) => {
     send_func = sendChatSSE;
     break;
   case 'websocket':
-    console.error('not implemented');
     let loc = window.location;
     let proto = (loc.protocol == 'https') ? 'wss' : 'ws';
     let ws = new WebSocket(`${proto}://${loc.host}/chat-ws`);
     ws.onmessage = ((e) => {
       recvChat(e.data);
     });
-    send_func = async (msg) => { await sendChatWebSocket(ws, msg) };
+    send_func = async (msg) => { return await sendChatWebSocket(ws, msg) };
     break;
   default:
     console.error('unsupported implementation type', impl);
