@@ -3,33 +3,50 @@
 <head>
   <title>My Chat</title>
   <style type="text/css">
+  body {
+    margin: 0;
+    padding: 0;
+  }
   #chat {
-    width: 100%;
-    height: 100% - 50px;
-    padding: 10px;
-    overflow: scroll;
-    background: #ddd;
+    position: absolute;
+    width: calc(100% - 10px);
+    top: 50px;
+    bottom: 30px;
+    margin: 0;
+    padding: 5px;
+    overflow-y: scroll;
+    background: #f2f2f2;
   }
   #chat .user {
     display: inline-block;
-    width: 20%;
+    width: calc(20% - 4px);
     padding: 2px;
     margin: 0;
     font-weight: bold;
   }
   #chat .text {
     display: inline-block;
-    width: 80%;
+    width: calc(80% - 4px);
     padding: 2px;
     margin: 0;
   }
   #chatInput {
     position: fixed;
     bottom: 0;
-    width: 100%;
-    height: 50px;
+    width: calc(100% - 10px);
+    height: 30px;
+    margin: 0;
     padding: 5px;
     background: #ccc;
+  }
+  #msg {
+    width: calc(100% - 100px);
+    height: 20px;
+  }
+  #send {
+    width: 70px;
+    height: 20px;
+    margin: 0;
   }
   </style>
 </head>
@@ -37,6 +54,7 @@
   <p>User: {{ user_id }}</p>
   <div id="chat"></div>
   <div id="chatInput">
+    <input type="text" id="msg">
     <button id="send">Send</button>
   </div>
 
@@ -54,12 +72,22 @@ async function sendChat(msg) {
 
 document.addEventListener('DOMContentLoaded', (e) => {
   let send_button = document.getElementById('send');
+  let chat_input = document.getElementById('msg');
   send_button.addEventListener('click', (e) => {
-    sendChat('test').then((result) => {
+    sendChat(chat_input.value).then((result) => {
       console.log('sendChat success:', result);
+      chat_input.value = '';
     }).catch((err) => {
       console.log('sendChat error:', err);
     });
+  });
+  chat_input.addEventListener('keyup', (e) => {
+    if (e.keyCode == 13) {
+      e.preventDefault();
+      if (chat_input.value == '')
+        return;
+      send_button.click();
+    }
   });
 
   let evt_source = new EventSource("/chat");

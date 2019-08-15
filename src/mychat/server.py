@@ -22,6 +22,7 @@ async def index(request: web.Request) -> web.Response:
         user_id = f'user-{secrets.token_hex(8)}'
         sess['user_id'] = user_id
     content = tpl.render({
+        'impl_type': request.app['impl_type'],
         'user_id': user_id,
     })
     return web.Response(status=200, body=content, content_type='text/html')
