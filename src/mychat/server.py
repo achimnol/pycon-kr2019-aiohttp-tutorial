@@ -1,4 +1,5 @@
 import asyncio
+import click
 import traceback
 from aiohttp import web
 from aiohttp_session import setup as setup_session, get_session
@@ -42,6 +43,7 @@ async def chat_send(request: web.Request) -> web.Response:
 
 
 async def chat_subscribe(request: web.Request) -> web.Response:
+    app = request.app
     sess = await get_session(request)
     user_id = sess.get('user_id')
     if user_id is None:
@@ -117,8 +119,13 @@ async def app_shutdown(app):
     await app['redis'].wait_closed()
 
 
-if __name__ == '__main__':
+@click.command()
+@click.option('-h', '--host', default='127.0.0.1')
+@click.option('-p', '--port', default=8080)
+@click.option('-t', '--impl-type', type=click.Choice(['sse', 'websocket']), default='sse')
+def main(host, port, impl_type):
     app = web.Application()
+    app['impl_type'] = impl_type
     app.add_routes([
         web.get("/", index),
         web.get("/chat", chat_subscribe),
@@ -126,4 +133,8 @@ if __name__ == '__main__':
     ])
     app.on_startup.append(app_init)
     app.on_shutdown.append(app_shutdown)
-    web.run_app(app, host='127.0.0.1', port=8080)
+    web.run_app(app, host=host, port=port)
+
+
+if __name__ == '__main__':
+    main()
