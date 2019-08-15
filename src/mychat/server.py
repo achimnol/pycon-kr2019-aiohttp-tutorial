@@ -1,5 +1,6 @@
 import asyncio
 import click
+import functools
 import traceback
 from aiohttp import web
 from aiohttp_session import setup as setup_session, get_session
@@ -12,6 +13,19 @@ import json
 import secrets
 
 jenv = jinja2.Environment(loader=jinja2.PackageLoader('mychat', 'templates'))
+
+
+def auth_required(handler):
+
+    @functools.wraps(handler)
+    async def wrapped(request: web.Request) -> web.Response:
+        sess = await get_session(request)
+        user_id = sess.get('user_id')
+        if user_id is None:
+            return web.json_response(status=401, data={'status': 'unauthorized'})
+        return await handler(request, user_id)
+
+    return wrapped
 
 
 async def index(request: web.Request) -> web.Response:
@@ -28,11 +42,8 @@ async def index(request: web.Request) -> web.Response:
     return web.Response(status=200, body=content, content_type='text/html')
 
 
-async def chat_send(request: web.Request) -> web.Response:
-    sess = await get_session(request)
-    user_id = sess.get('user_id')
-    if user_id is None:
-        return web.json_response(status=401, data={'status': 'unauthorized'})
+@auth_required
+async def chat_send(request: web.Request, user_id: str) -> web.Response:
     payload = await request.json()
     chat_record = json.dumps({
         'user': user_id,
@@ -43,23 +54,17 @@ async def chat_send(request: web.Request) -> web.Response:
     return web.json_response(status=200, data={'status': 'ok'})
 
 
-async def chat_subscribe(request: web.Request) -> web.Response:
-    app = request.app
-    sess = await get_session(request)
-    user_id = sess.get('user_id')
-    if user_id is None:
-        return web.json_response(status=401, data={'status': 'unauthorized'})
-    request_id = f'req-{secrets.token_hex(8)}'
+@auth_required
+async def chat_subscribe(request: web.Request, user_id: str) -> web.Response:
+    request_id = f'ssereq-{secrets.token_hex(8)}'
     my_queue = asyncio.Queue()
-    app['client_queues'][request_id] = my_queue
+    request.app['client_queues'][request_id] = my_queue
     print(f'subscriber {user_id}:{request_id} started')
     try:
-        channels = await app['redis'].subscribe('chat')
-        assert len(channels) == 1
-        channel = channels[0]
         async with sse_response(request) as response:
             while True:
                 chat_record = await my_queue.get()
+                print('sse.recv', chat_record)
                 if chat_record is None:
                     break
                 await response.send(json.dumps(chat_record))
@@ -70,7 +75,48 @@ async def chat_subscribe(request: web.Request) -> web.Response:
         traceback.print_exc()
     finally:
         print(f'subscriber {user_id}:{request_id} terminated')
-        del app['client_queues'][request_id]
+        del request.app['client_queues'][request_id]
+
+
+@auth_required
+async def chat_websocket(request: web.Request, user_id: str) -> web.Response:
+    ws = web.WebSocketResponse()
+    await ws.prepare(request)
+    request_id = f'wsreq-{secrets.token_hex(8)}'
+    my_queue = asyncio.Queue()
+    request.app['client_queues'][request_id] = my_queue
+
+    async def chat_recv():
+        try:
+            while True:
+                chat_record = await my_queue.get()
+                print('ws.recv', chat_record)
+                if chat_record is None:
+                    break
+                await ws.send_json(chat_record)
+        except asyncio.CancelledError:
+            pass
+
+    recv_task = asyncio.create_task(chat_recv())
+    print(f'subscriber {user_id}:{request_id} started')
+    try:
+        async for msg in ws:
+            if msg.type == web.WSMsgType.TEXT:
+                payload = json.loads(msg.data)
+                chat_record = json.dumps({
+                    'user': user_id,
+                    'time': datetime.utcnow().isoformat(),
+                    'text': payload['text'],
+                })
+                await request.app['redis'].publish('chat', chat_record)
+        return ws
+    except asyncio.CancelledError:
+        recv_task.cancel()
+        await recv_task
+        raise
+    finally:
+        print(f'subscriber {user_id}:{request_id} terminated')
+        del request.app['client_queues'][request_id]
 
 
 async def chat_distribute(app: web.Application) -> None:
@@ -130,6 +176,7 @@ def main(host, port, impl_type):
     app.add_routes([
         web.get("/", index),
         web.get("/chat", chat_subscribe),
+        web.get("/chat-ws", chat_websocket),
         web.post("/chat", chat_send),
     ])
     app.on_startup.append(app_init)

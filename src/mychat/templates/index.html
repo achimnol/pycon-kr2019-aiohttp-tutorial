@@ -60,21 +60,72 @@
 
 <script type="text/javascript">
 
-async function sendChat(msg) {
+let impl = '{{ impl_type }}';
+
+async function sendChatSSE(msg) {
   let rqstData = {
     'text': msg,
   };
-  console.log('sendChat', rqstData);
   let resp = await fetch('/chat', {method: 'POST', body: JSON.stringify(rqstData)});
   let result = await resp.json();
   return result;
 }
 
+async function sendChatWebSocket(ws, msg) {
+  let rqstData = {
+    'text': msg,
+  };
+  ws.send(JSON.stringify(rqstData));
+  return 'success';
+}
+
+function recvChat(raw_record) {
+  let record = JSON.parse(raw_record);
+  console.log('chat receieved', record);
+  let msg_elem = document.createElement('div');
+  msg_elem.classList.add('message');
+  msg_elem.insertAdjacentHTML('beforeend', '<span class="user"></span>');
+  msg_elem.insertAdjacentHTML('beforeend', '<span class="text"></span>');
+  msg_elem.querySelector('.user').innerText = record.user;
+  msg_elem.querySelector('.text').innerText = record.text;
+  let chat_view = document.getElementById('chat');
+  chat_view.appendChild(msg_elem);
+  chat_view.scrollTop = chat_view.scrollHeight;
+}
+
 document.addEventListener('DOMContentLoaded', (e) => {
+
+  let send_func = null;
+
+  switch (impl) {
+  case 'sse':
+    let evt_source = new EventSource("/chat");
+    evt_source.onmessage = (e) => {
+      recvChat(e.data);
+    };
+    send_func = sendChatSSE;
+    break;
+  case 'websocket':
+    console.error('not implemented');
+    let loc = window.location;
+    let proto = (loc.protocol == 'https') ? 'wss' : 'ws';
+    let ws = new WebSocket(`${proto}://${loc.host}/chat-ws`);
+    ws.onmessage = ((e) => {
+      recvChat(e.data);
+    });
+    send_func = async (msg) => { await sendChatWebSocket(ws, msg) };
+    break;
+  default:
+    console.error('unsupported implementation type', impl);
+  }
+
   let send_button = document.getElementById('send');
   let chat_input = document.getElementById('msg');
   send_button.addEventListener('click', (e) => {
-    sendChat(chat_input.value).then((result) => {
+    if (chat_input.value == '')
+      return;
+    console.log('sendChat', chat_input.value);
+    send_func(chat_input.value).then((result) => {
       console.log('sendChat success:', result);
       chat_input.value = '';
     }).catch((err) => {
@@ -84,23 +135,10 @@ document.addEventListener('DOMContentLoaded', (e) => {
   chat_input.addEventListener('keyup', (e) => {
     if (e.keyCode == 13) {
       e.preventDefault();
-      if (chat_input.value == '')
-        return;
       send_button.click();
     }
   });
 
-  let evt_source = new EventSource("/chat");
-  evt_source.onmessage = (e) => {
-    console.log('chat receieved', e);
-    let msg_elem = document.createElement('div');
-    msg_elem.classList.add('message');
-    msg_elem.insertAdjacentHTML('beforeend', '<span class="user"></span>');
-    msg_elem.insertAdjacentHTML('beforeend', '<span class="text"></span>');
-    msg_elem.querySelector('.user').innerText = JSON.parse(e.data).user;
-    msg_elem.querySelector('.text').innerText = JSON.parse(e.data).text;
-    document.getElementById('chat').appendChild(msg_elem);
-  };
 });
 
 </script>
